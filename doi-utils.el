@@ -749,7 +749,7 @@ Also cleans entry using ‘org-ref’, and tries to download the corresponding p
 
 
 ;;;###autoload
-(defun doi-utils-add-bibtex-entry-from-doi (doi bibfile)
+(defun doi-utils-add-bibtex-entry-from-doi (doi &optional bibfile)
   "Add DOI entry to end of a file in the current directory.
 Pick the file ending with .bib or in
 `org-ref-default-bibliography'.  If you have an active region that
@@ -781,12 +781,9 @@ Argument BIBFILE the bibliography to use."
            (t
             nil)))
          ;;  now get the bibfile to add it to
-         (completing-read
-          "Bibfile: "
-          (append (f-entries "." (lambda (f)
-				   (and (not (string-match "#" f))
-					(f-ext? f "bib"))))
-                  org-ref-default-bibliography))))
+         (org-ref-determine-bibliography)))
+  (if (not bibfile)
+      (setq bibfile (org-ref-determine-bibliography)))
   ;; Wrap in save-window-excursion to restore your window arrangement after this
   ;; is done.
   (save-window-excursion

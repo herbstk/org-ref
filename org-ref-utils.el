@@ -329,6 +329,17 @@ Format according to the type in `org-ref-bibliography-entry-format'."
           (setq entry (buffer-string)))))
     entry))
 
+(defun org-ref-determine-bibliography ()
+  "Let the user select a bibliography file. The list of
+  possibilities is compiled using `org-ref-find-bibliographgy',
+  files with a bib-suffix and `org-ref-default-bibliography'."
+  (completing-read
+   "Bibfile: "
+   (append (org-ref-find-bibliography)
+           (f-entries "." (lambda (f)
+                            (and (not (string-match "#" f))
+                                 (f-ext? f "bib"))))
+           org-ref-default-bibliography)))
 
 ;;*** key at point functions
 (defun org-ref-get-pdf-filename (key)
