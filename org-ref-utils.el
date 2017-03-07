@@ -21,6 +21,7 @@
 ;;; Commentary:
 
 ;;
+(require 'org)
 (require 'org-ref-pdf)  		; for pdftotext-executable
 
 (defvar org-ref-cite-types)
@@ -764,6 +765,28 @@ some things are escaped since odt is an xml format."
       (mapconcat (lambda (x)
 		   (xml-escape-string (org-ref-get-bibtex-entry-ascii x)))
 		 keys "\n"))))
+
+(defun org-ref-pdf-p (filename)
+  "Check if FILENAME is PDF file.
+
+From the PDF specification 1.7:
+
+    The first line of a PDF file shall be a header consisting of
+    the 5 characters %PDF- followed by a version number of the
+    form 1.N, where N is a digit between 0 and 7."
+  (let ((header (with-temp-buffer
+                  (set-buffer-multibyte nil)
+                  (insert-file-contents-literally filename nil 0 5)
+                  (buffer-string))))
+    (string-equal (encode-coding-string header 'utf-8) "%PDF-")))
+
+;;;###autoload
+(defmacro org-ref-link-set-parameters (type &rest parameters)
+  "Set link TYPE properties to PARAMETERS."
+  (declare (indent 1))
+  (if (fboundp 'org-link-set-parameters)
+      `(org-link-set-parameters ,type ,@parameters)
+    `(org-add-link-type ,type ,(plist-get parameters :follow) ,(plist-get parameters :export))))
 
 (provide 'org-ref-utils)
 ;;; org-ref-utils.el ends here

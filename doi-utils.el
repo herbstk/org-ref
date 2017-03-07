@@ -34,11 +34,13 @@
 ;; - doi-utils-add-bibtex-entry-from-doi to add an entry to your default bibliography (cleaned with pdf if possible).
 ;; - doi-utils-update-bibtex-entry-from-doi with cursor in an entry to update its fields.
 
+;;; Code:
 
 (defvar org-ref-pdf-directory)
 (defvar org-ref-bibliography-notes)
 (defvar org-ref-default-bibliography)
 (defvar reftex-default-bibliography)
+(defvar url-http-end-of-headers)
 (declare-function 'org-ref-bib-citation "org-ref-core.el")
 
 (require 'bibtex)
@@ -49,8 +51,7 @@
 (require 'org)                          ; org-add-link-type
 (require 'org-bibtex)                   ; org-bibtex-yank
 (require 'url-http)
-
-;;; Code:
+(require 'org-ref-utils)
 
 ;;* Customization
 (defgroup doi-utils nil
@@ -272,11 +273,7 @@ Argument REDIRECT-URL URL you are redirected to."
 (defun iop-pdf-url (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
   (when (string-match "^http://iopscience.iop.org" *doi-utils-redirect*)
-    (let ((tail (replace-regexp-in-string
-                 "^http://iopscience.iop.org" "" *doi-utils-redirect*)))
-      (concat "http://iopscience.iop.org" tail
-              "/pdf" (replace-regexp-in-string "/" "_" tail) ".pdf"))))
-
+    (replace-regexp-in-string "/meta" "/pdf" *doi-utils-redirect*)))
 
 ;;** JSTOR
 
@@ -544,15 +541,11 @@ checked."
 	       (setq pdf-url (doi-utils-get-pdf-url doi)))
 	  (url-copy-file pdf-url pdf-file)
 	  ;; now check if we got a pdf
-	  (with-temp-buffer
-	    (insert-file-contents pdf-file)
-	    ;; PDFS start with %PDF-1.x as the first few characters.
-	    (if (not (string= (buffer-substring 1 (min 6 (point-max))) "%PDF-"))
-		(progn
-		  (delete-file pdf-file)
-		  (message "No pdf was downloaded.")
-		  (browse-url pdf-url))
-	      (message "%s saved" pdf-file))))
+          (if (org-ref-pdf-p pdf-file)
+              (message "%s saved" pdf-file)
+            (delete-file pdf-file)
+            (message "No pdf was downloaded.")
+            (browse-url pdf-url)))
 	 ((equal arg '(4))
 	  (copy-file (expand-file-name (read-file-name "Pdf file: " nil nil t))
 		     pdf-file))
@@ -569,10 +562,6 @@ checked."
 ;; you can download metadata about a DOI from http://dx.doi.org. You just have
 ;; to construct the right http request to get it. Here is a function that gets
 ;; the metadata as a plist in emacs.
-
-;; This is a local variable defined in `url-http'.  We need it to avoid
-;; byte-compiler errors.
-(defvar-local url-http-end-of-headers nil)
 
 (defun doi-utils-get-json-metadata (doi)
   "Try to get json metadata for DOI.  Open the DOI in a browser if we do not get it."
@@ -779,11 +768,21 @@ Argument BIBFILE the bibliography to use."
            ;; otherwise, we have no initial input. You
            ;; will have to type it in.
            (t
-            nil)))
-         ;;  now get the bibfile to add it to
-         (org-ref-determine-bibliography)))
-  (if (not bibfile)
-      (setq bibfile (org-ref-determine-bibliography)))
+            nil)))))
+
+  (unless bibfile
+    (setq bibfile (completing-read
+		   "Bibfile: "
+		   (-uniq
+		    (append
+		     ;; see if we should add it to a bib-file defined in the file
+		     (org-ref-find-bibliography)
+		     ;; or any bib-files that exist in the current directory
+		     (f-entries "." (lambda (f)
+				      (and (not (string-match "#" f))
+					   (f-ext? f "bib"))))
+		     ;; and last in the default bibliography
+		     org-ref-default-bibliography)))))
   ;; Wrap in save-window-excursion to restore your window arrangement after this
   ;; is done.
   (save-window-excursion
@@ -794,10 +793,13 @@ Argument BIBFILE the bibliography to use."
       (if (word-search-forward (concat doi) nil t)
           (message "%s is already in this file" doi)
         (goto-char (point-max))
-	(if (re-search-backward "^}$" nil t)
-	    (progn (forward-char 1)
-		   (insert "\n\n"))
+	;; make sure we are at the beginning of a line
+	(when (not (= (point) (line-beginning-position)))
+	  (forward-char 1))
+
+	(when (not (looking-back "\n\n" 3))
 	  (insert "\n\n"))
+	
         (doi-utils-insert-bibtex-entry-from-doi doi)
         (save-buffer)))))
 
@@ -1082,38 +1084,20 @@ Argument LINK-STRING Passed in on link click."
         2)
        link-string))))
 
-(if (fboundp 'org-link-set-parameters)
-    (org-link-set-parameters
-     "doi"
-     :follow #'doi-link-menu
-     :export (lambda (doi desc format)
-	       (cond
-		((eq format 'html)
-		 (format "<a href=\"%s%s\">%s</a>"
-			 doi-utils-dx-doi-org-url
-			 doi
-			 (or desc (concat "doi:" doi))))
-		((eq format 'latex)
-		 (format "\\href{%s%s}{%s}"
-			 doi-utils-dx-doi-org-url
-			 doi
-			 (or desc (concat "doi:" doi)))))))
-  (org-add-link-type
-   "doi"
-   'doi-link-menu
-   (lambda (doi desc format)
-     (cond
-      ((eq format 'html)
-       (format "<a href=\"%s%s\">%s</a>"
-	       doi-utils-dx-doi-org-url
-	       doi
-	       (or desc (concat "doi:" doi))))
-      ((eq format 'latex)
-       (format "\\href{%s%s}{%s}"
-	       doi-utils-dx-doi-org-url
-	       doi
-	       (or desc (concat "doi:" doi))))))))
-
+(org-ref-link-set-parameters "doi"
+  :follow #'doi-link-menu
+  :export (lambda (doi desc format)
+            (cond
+             ((eq format 'html)
+              (format "<a href=\"%s%s\">%s</a>"
+                      doi-utils-dx-doi-org-url
+                      doi
+                      (or desc (concat "doi:" doi))))
+             ((eq format 'latex)
+              (format "\\href{%s%s}{%s}"
+                      doi-utils-dx-doi-org-url
+                      doi
+                      (or desc (concat "doi:" doi)))))))
 
 ;;* Getting a doi for a bibtex entry missing one
 
