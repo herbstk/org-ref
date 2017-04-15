@@ -173,7 +173,6 @@ must return a pdf-url, or nil.")
   (when (string-match "^http://journals.aps.org" *doi-utils-redirect*)
     (replace-regexp-in-string "/abstract/" "/pdf/" *doi-utils-redirect*)))
 
-
 ;;** Science
 
 (defun science-pdf-url (*doi-utils-redirect*)
@@ -450,6 +449,23 @@ REDIRECT-URL is where the pdf url will be in."
   (when (string-match "^https://www.osapublishing.org" *doi-utils-redirect*)
     (replace-regexp-in-string "abstract.cfm" "viewmedia.cfm" *doi-utils-redirect* )))
 
+;;** Annual Reviews journals
+(defun annuvrev-pdf-url (*doi-utils-redirect*)
+  "Get url to the pdf from *DOI-UTILS-REDIRECT*."
+  (when (string-match "^http://www.annualreviews.org/doi/" *doi-utils-redirect*)
+    (replace-regexp-in-string "/doi/" "/doi/pdf/" *doi-utils-redirect*)))
+
+;; PLOS (only tested PLOS One for now)
+(defun plos-pdf-url (*doi-utils-redirect*)
+  "Get url to the pdf from *DOI-UTILS-REDIRECT*."
+  (when (string-match "^http://journals.plos.org" *doi-utils-redirect*)
+    (concat (replace-regexp-in-string "article" "article/file" *doi-utils-redirect*) "&type=printable")))
+
+;;** BioMed Central journals
+(defun biomedcentral-pdf-url (*doi-utils-redirect*)
+  "Get url to the pdf from *DOI-UTILS-REDIRECT*."
+  (when (string-match "http://.+biomedcentral.com/articles/" *doi-utils-redirect*)
+    (replace-regexp-in-string "/articles/" "/track/pdf/" *doi-utils-redirect*)))
 
 ;;** Add all functions
 
@@ -479,6 +495,9 @@ REDIRECT-URL is where the pdf url will be in."
        'ieee2-pdf-url
        'acm-pdf-url
        'osa-pdf-url
+       'annuvrev-pdf-url
+       'plos-pdf-url
+       'biomedcentral-pdf-url
        'generic-full-pdf-url))
 
 ;;** Get the pdf url for a doi
@@ -775,8 +794,7 @@ Argument BIBFILE the bibliography to use."
 		   "Bibfile: "
 		   (-uniq
 		    (append
-		     ;; see if we should add it to a bib-file defined in the file
-		     (org-ref-find-bibliography)
+		     ;; see if we should add it to a bib-file defined in the org-ref-find-bibliography)
 		     ;; or any bib-files that exist in the current directory
 		     (f-entries "." (lambda (f)
 				      (and (not (string-match "#" f))
