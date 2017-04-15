@@ -190,10 +190,31 @@ that was clicked on."
     (define-key map (kbd "H-u") 'org-ref-open-url-at-point)
     (define-key map (kbd "H-p") 'org-ref-open-pdf-at-point)
     (define-key map (kbd "H-n") 'org-ref-open-notes-at-point)
+    (define-key map (kbd "H-r") 'org-ref-wos-related-at-point)
+    (define-key map (kbd "H-c") 'org-ref-wos-citing-at-point)
+    (define-key map (kbd "H-g") 'org-ref-google-scholar-at-point)
+    (define-key map (kbd "H-f") 'org-ref-format-bibtex-entry-at-point)
+    (define-key map (kbd "H-w") (lambda ()
+				  "Copy the key at point."
+				  (interactive)
+				  (kill-new (car (org-ref-get-bibtex-key-and-file)))))
+    (define-key map (kbd "H-W") (lambda ()
+				  "Copy all the keys at point."
+				  (interactive)
+				  (kill-new (org-element-property :path (org-element-context)))))
+    (define-key map (kbd "H-y") (lambda ()
+				  "Paste key at point. Assumes the first thing in the killring is a key."
+				  (interactive)
+				  (org-ref-insert-key-at-point (car kill-ring))))
+
+    ;; Navigation keys
     (define-key map (kbd "C-<left>") 'org-ref-previous-key)
     (define-key map (kbd "C-<right>") 'org-ref-next-key)
+
+    ;; rearrangement keys
     (define-key map (kbd "S-<left>") (lambda () (interactive) (org-ref-swap-citation-link -1)))
-    (define-key map (kbd "S-<right>") (lambda () (interactive) (org-ref-swap-citation-link 1))) 
+    (define-key map (kbd "S-<right>") (lambda () (interactive) (org-ref-swap-citation-link 1)))
+    (define-key map (kbd "S-<up>") 'org-ref-sort-citation-link)
     map)
   "Keymap for cite links."
   :group 'org-ref)
@@ -327,18 +348,19 @@ Uses a hook function to display the message in the minibuffer."
   :group 'org-ref)
 
 
-(defcustom org-ref-cite-types
-  '("cite" "nocite" ;; the default latex cite commands
-    ;; natbib cite commands, http://ctan.unixbrain.com/macros/latex/contrib/natbib/natnotes.pdf
-    "citet" "citet*" "citep" "citep*"
+(defcustom org-ref-natbib-types
+  '("citet" "citet*" "citep" "citep*"
     "citealt" "citealt*" "citealp" "citealp*"
     "citenum" "citetext"
     "citeauthor" "citeauthor*"
     "citeyear" "citeyear*"
-    "Citet" "Citep" "Citealt" "Citealp" "Citeauthor"
-    ;; biblatex commands
-    ;; http://ctan.mirrorcatalogs.com/macros/latex/contrib/biblatex/doc/biblatex.pdf
-    "Cite"
+    "Citet" "Citep" "Citealt" "Citealp" "Citeauthor")
+  "natbib cite commands, http://ctan.unixbrain.com/macros/latex/contrib/natbib/natnotes.pdf"
+  :type '(repeat :tag "List of citation types" string)
+  :group 'org-ref)
+
+(defcustom org-ref-biblatex-types
+  '("Cite"
     "parencite" "Parencite"
     "footcite" "footcitetext"
     "textcite" "Textcite"
@@ -358,10 +380,20 @@ Uses a hook function to display the message in the minibuffer."
     "cites" "Cites" "parencites" "Parencites"
     "footcites" "footcitetexts"
     "smartcites" "Smartcites" "textcites" "Textcites"
-    "supercites" "autocites" "Autocites"
-    ;; for the bibentry package
-    "bibentry"
-    )
+    "supercites" "autocites" "Autocites")
+  "biblatex commands
+http://ctan.mirrorcatalogs.com/macros/latex/contrib/biblatex/doc/biblatex.pdf"
+  :type '(repeat :tag "List of citation types" string)
+  :group 'org-ref)
+
+
+(defcustom org-ref-cite-types
+  (append
+   '("cite" "nocite") ;; the default latex cite commands
+   org-ref-natbib-types
+   org-ref-biblatex-types
+   ;; for the bibentry package
+   '("bibentry"))
   "List of citation types known in `org-ref'."
   :type '(repeat :tag "List of citation types" string)
   :group 'org-ref)
@@ -384,7 +416,11 @@ The functions should have no arguments, and
 operate on the bibtex entry at point. You can assume point starts
 at the beginning of the entry. These functions are wrapped in
 `save-restriction' and `save-excursion' so you do not need to
-save the point position."
+save the point position.
+
+Org ref contains some functions that are not included by default
+such as `orcb-clean-nil' or `orcb-clean-nil-opinionated' that
+users may be interested in adding themselves."
   :group 'org-ref
   :type 'hook)
 
@@ -1185,15 +1221,15 @@ ARG does nothing."
      ;; for tblname, it is not enough to get word boundary
      ;; tab-little and tab-little-2 match then.
      (count-matches
-      (format "^#\\+tblname:\\s-*%s\\b[^-:]" label)
+      (format "^\\( \\)*#\\+tblname:\\s-*%s\\b[^-:]" label)
       (point-min) (point-max))
      (count-matches (format "\\label{%s}" label)
                     (point-min) (point-max))
      ;; this is the org-format #+label:
-     (count-matches (format "^#\\+label:\\s-*%s\\b[^-:]" label)
+     (count-matches (format "^\\( \\)*#\\+label:\\s-*%s\\b[^-:]" label)
                     (point-min) (point-max))
      ;; #+name:
-     (count-matches (format "^#\\+name:\\s-*%s\\b[^-:]" label)
+     (count-matches (format "^\\( \\)*#\\+name:\\s-*%s\\b[^-:]" label)
 		    (point-min) (point-max))
      (let ((custom-id-count 0))
        (when (and (buffer-file-name)
@@ -1297,19 +1333,19 @@ Navigate back with \`\\[org-mark-ring-goto]'."
        (progn
 	 (goto-char (point-min))
 	 (re-search-forward
-	  (format "^#\\+label:\\s-*\\(%s\\)\\b" (regexp-quote label)) nil t))
+	  (format "^\\( \\)*#\\+label:\\s-*\\(%s\\)\\b" (regexp-quote label)) nil t))
 
        ;; org tblname
        (progn
 	 (goto-char (point-min))
 	 (re-search-forward
-	  (format "^#\\+tblname:\\s-*\\(%s\\)\\b" (regexp-quote label)) nil t))
+	  (format "^\\( \\)*#\\+tblname:\\s-*\\(%s\\)\\b" (regexp-quote label)) nil t))
 
        ;; a #+name
        (progn
 	 (goto-char (point-min))
 	 (re-search-forward
-	  (format "^#\\+name:\\s-*\\(%s\\)\\b" (regexp-quote label)) nil t))
+	  (format "^\\( \\)*#\\+name:\\s-*\\(%s\\)\\b" (regexp-quote label)) nil t))
 
        ;; CUSTOM_ID
        (progn
@@ -1421,8 +1457,8 @@ Optional argument ARG Does nothing."
       (widen)
       (goto-char (point-min))
       (let ((matches '()))
-	(while (re-search-forward "^#\\+name:\\s-+\\(.*\\)" nil t)
-	  (pushnew (match-string 1) matches))
+	(while (re-search-forward "^\\( \\)*#\\+name:\\s-+\\(.*\\)" nil t)
+	  (pushnew (match-string 2) matches))
 	matches))))
 
 
@@ -1487,13 +1523,13 @@ This is used to complete ref links."
        (progn
 	 (goto-char (point-min))
 	 (re-search-forward
-	  (format "^#\\+label:\\s-*\\(%s\\)\\b" (regexp-quote label)) nil t))
+	  (format "^\\( \\)*#\\+label:\\s-*\\(%s\\)\\b" (regexp-quote label)) nil t))
 
        ;; org tblname
        (progn
 	 (goto-char (point-min))
 	 (re-search-forward
-	  (format "^#\\+tblname:\\s-*\\(%s\\)\\b" (regexp-quote label)) nil t))
+	  (format "^\\( \\)*#\\+tblname:\\s-*\\(%s\\)\\b" (regexp-quote label)) nil t))
 
        ;; radio link
        (progn
@@ -1849,22 +1885,22 @@ Supported backends: 'html, 'latex, 'ascii, 'org, 'md, 'pandoc" type type)
      (cond
       ((eq format 'org)
        (mapconcat
-  (lambda (key)
-    (format "[[#%s][%s]]" key key))
-  (org-ref-split-and-strip-string keyword) ","))
+	(lambda (key)
+	  (format "[[#%s][%s]]" key key))
+	(org-ref-split-and-strip-string keyword) ","))
 
       ((eq format 'ascii)
        (concat "["
          (mapconcat
-    (lambda (key)
-      (format "%s" key))
-    (org-ref-split-and-strip-string keyword) ",") "]"))
+	  (lambda (key)
+	    (format "%s" key))
+	  (org-ref-split-and-strip-string keyword) ",") "]"))
 
       ((eq format 'html)
        (mapconcat
-  (lambda (key)
-    (format "<a class='org-ref-reference' href=\"#%s\">%s</a>" key key))
-  (org-ref-split-and-strip-string keyword) ","))
+	(lambda (key)
+	  (format "<a class='org-ref-reference' href=\"#%s\">%s</a>" key key))
+	(org-ref-split-and-strip-string keyword) ","))
 
       ((eq format 'latex)
        (if (string= (substring ,type -1) "s")
@@ -1887,21 +1923,21 @@ Supported backends: 'html, 'latex, 'ascii, 'org, 'md, 'pandoc" type type)
       ;; for markdown and pandoc we generate pandoc citations
       ((or (eq format 'md) (eq format 'pandoc))
        (cond
-  (desc ;; pre and or post text
-   (let* ((text (split-string desc "::"))
-    (pre (car text))
-    (post (cadr text)))
-     (concat
-      (format "[@%s," keyword)
-      (when pre (format " %s" pre))
-      (when post (format ", %s" post))
-      "]")))
-  (t
-   (format "[%s]"
-     (mapconcat
-      (lambda (key) (concat "@" key))
-      (org-ref-split-and-strip-string keyword)
-      "; "))))))))
+	(desc ;; pre and or post text
+	 (let* ((text (split-string desc "::"))
+		(pre (car text))
+		(post (cadr text)))
+	   (concat
+	    (format "[@%s," keyword)
+	    (when pre (format " %s" pre))
+	    (when post (format ", %s" post))
+	    "]")))
+	(t
+	 (format "[%s]"
+		 (mapconcat
+		  (lambda (key) (concat "@" key))
+		  (org-ref-split-and-strip-string keyword)
+		  "; "))))))))
 
 
 (defun org-ref-format-citation-description (desc)
@@ -2520,7 +2556,7 @@ file.  Makes a new buffer with clickable links."
 	    ;; keyword style
             (goto-char (point-min))
             (while (re-search-forward
-                    (format  "^#\\+label:\\s-*%s" label) nil t)
+                    (format  "^\\( \\)*#\\+label:\\s-*%s" label) nil t)
               (cl-pushnew (cons label (point-marker)) multiple-labels
 			  :test (lambda (a b)
 				  (and (string= (car a) (car b))
@@ -2529,7 +2565,7 @@ file.  Makes a new buffer with clickable links."
 
             (goto-char (point-min))
             (while (re-search-forward
-                    (format   "^#\\+tblname:\\s-*%s" label) nil t)
+                    (format "^\\( \\)*#\\+tblname:\\s-*%s" label) nil t)
               (cl-pushnew (cons label (point-marker)) multiple-labels
 			  :test (lambda (a b)
 				  (and (string= (car a) (car b))
@@ -2649,6 +2685,42 @@ file.  Makes a new buffer with clickable links."
 
 ;;** Clean a bibtex entry
 ;; These functions operate on a bibtex entry and "clean" it in some way.
+
+(defun orcb-clean-nil (arg)
+  "Remove nil from some article fields.
+The removal is conditional. Sometimes it is useful to have nil
+around, e.g. for ASAP articles where the fields are not defined
+yet but will be in the future.
+
+With \\[univeral-argument], run `bibtex-clean-entry' after.
+"
+  (interactive "P")
+  (bibtex-beginning-of-entry)
+  (let* ((entry (bibtex-parse-entry))
+         (type (downcase (cdr (assoc "=type=" entry)))))
+    (when (string= type "article")
+      (cond
+       ;; we have volume and pages but number is nil.
+       ;; remove the number field.
+       ((and (string= type "article")
+	     (not (string= (cdr (assoc "volume" entry)) "{nil}"))
+	     (not (string= (cdr (assoc "pages" entry)) "{nil}"))
+	     (string= (cdr (assoc "number" entry)) "{nil}"))
+	(bibtex-set-field "number" "")
+	(if arg
+            (bibtex-clean-entry)))))))
+
+(defun orcb-clean-nil-opinionated ()
+  "Remove nil from all article fields."
+  (interactive)
+  (bibtex-beginning-of-entry)
+  (let* ((entry (bibtex-parse-entry))
+         (type (downcase (cdr (assoc "=type=" entry)))))
+    (when (string= type "article")
+      (cl-loop for (field . text) in entry do
+               (if (string= text "{nil}")
+                   (bibtex-set-field field ""))))))
+
 (defun orcb-clean-doi ()
   "Remove http://dx.doi.org/ in the doi field."
   (let ((doi (bibtex-autokey-get-field "doi")))
@@ -2957,7 +3029,7 @@ move to the beginning of the previous cite link after this one."
 
       (goto-char (point-min))
       (when (re-search-forward
-             (format "^#\\+label:\\s-*\\(%s\\)\\b" label) nil t)
+             (format "^\\( \\)*#\\+label:\\s-*\\(%s\\)\\b" label) nil t)
         (throw 'result (buffer-substring
                         (progn
                           (forward-line -1)
@@ -2969,7 +3041,7 @@ move to the beginning of the previous cite link after this one."
 
       (goto-char (point-min))
       (when (re-search-forward
-             (format "^#\\+tblname:\\s-*\\(%s\\)\\b" label) nil t)
+             (format "^\\( \\)*#\\+tblname:\\s-*\\(%s\\)\\b" label) nil t)
         (throw 'result (buffer-substring
                         (progn
                           (forward-line -1)
@@ -2981,7 +3053,7 @@ move to the beginning of the previous cite link after this one."
 
       (goto-char (point-min))
       (when (re-search-forward
-             (format "^#\\+name:\\s-*\\(%s\\)\\b" label) nil t)
+             (format "^\\( \\)*#\\+name:\\s-*\\(%s\\)\\b" label) nil t)
         (throw 'result (buffer-substring
                         (progn
                           (forward-line -1)
@@ -3203,7 +3275,8 @@ A blank string deletes pre/post text."
 	     (when bracketp "[[")
 	     type ":" (mapconcat 'identity keys ",")
 	     (when bracketp "]]")
-	     trailing-space)))))
+	     trailing-space))
+      (kill-new key))))
 
 
 (defun org-ref-insert-key-at-point (keys)

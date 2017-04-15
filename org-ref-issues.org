@@ -1,4 +1,13 @@
 
+#+BEGIN_SRC emacs-lisp
+(org-link-set-parameters
+ "github-issue"
+ :follow (lambda (path)
+	   (browse-url
+	    (format "https://github.com/jkitchin/org-ref/issues/%s" path))))
+#+END_SRC
+
+#+RESULTS:
 
 * 381 Testing labels
 
@@ -34,3 +43,103 @@ https://github.com/jkitchin/org-ref/issues/388
 Click on this, and press "g". It should get the bibtex entry from the doi.
 
 doi:10.1016/j.calphad.2017.01.009
+* 399
+github-issue:399
+
+This is a natbib type, and if you do not use the natbib package, it will not work correctly in pdf export.
+
+citenum:akhade-2011-effec
+#+latex_class: article-nodefaults
+#+latex_header: \usepackage{biblatex}
+#+latex_header: \addbibresource{org-ref.bib}
+
+
+* 356
+  :PROPERTIES:
+  :CUSTOM_ID:       8E93EBF7-D0D3-4024-B005-45729C6AC6E0
+  :END:
+
+cite:jkitchin76:online
+
+
+printbibliography:nil
+
+
+#+BEGIN_SRC emacs-lisp
+(org-ref-get-html-bibliography)
+#+END_SRC
+
+#+BEGIN_SRC emacs-lisp
+(org-ref-get-bibtex-keys)
+#+END_SRC
+
+#+RESULTS:
+| jkitchin76:online |
+
+
+#+BEGIN_SRC emacs-lisp
+(org-ref-find-bibliography)
+#+END_SRC
+
+#+RESULTS:
+| org-ref.bib |
+
+
+#+BEGIN_SRC emacs-lisp
+(org-ref-get-bibtex-entry-html "jkitchin76:online")
+#+END_SRC
+
+#+BEGIN_SRC emacs-lisp
+(org-ref-get-bibtex-entry-citation "jkitchin76:online")
+#+END_SRC
+
+
+#+BEGIN_SRC emacs-lisp
+(bibtex-set-dialect 'biblatex)
+(org-ref-key-in-file-p "jkitchin76:online" (file-truename "org-ref.bib"))
+#+END_SRC
+
+#+RESULTS:
+: 9765
+ref:8E93EBF7-D0D3-4024-B005-45729C6AC6E0e
+
+* 405
+
+ref:test-table
+
+  #+name: test-table
+  | 5 | 6 |
+* 404 isbn issues
+
+#+BEGIN_SRC emacs-lisp
+(let ((org-ref-clean-bibtex-entry-hook
+       '(org-ref-bibtex-format-url-if-doi
+	 orcb-key-comma
+	 org-ref-replace-nonascii
+	 orcb-& orcb-%
+	 org-ref-title-case-article
+	 orcb-clean-year
+	 orcb-clean-doi
+	 orcb-clean-pages
+	 org-ref-sort-bibtex-entry)))
+  (isbn-to-bibtex "9783540330363" "org-ref.bib"))
+#+END_SRC
+
+#+RESULTS:
+* 410
+
+#+STARTUP: content indent hidestars fninline
+#+OPTIONS: toc:nil
+
+* Introduction
+
+Here is reference Figure
+
+#+BEGIN_SRC R :results output graphics :exports results :file test.pdf :height 4 :width 8
+plot(1:10,1:10)
+#+END_SRC
+
+#+CAPTION: A caption to a plot
+#+NAME: fig:test
+#+RESULTS:
+[[file:test.pdf]]
