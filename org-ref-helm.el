@@ -101,7 +101,7 @@ Use a double \\[universal-argument] \\[universal-argument] to insert a
 					      (if (looking-at " ")
 						  " "
 						""))))
-                                      (if (-contains? '("ref" "eqref" "pageref" "nameref")
+                                      (if (-contains? org-ref-ref-types
                                                       (org-element-property :type object))
                                           ;; we are on a link, so replace it.
                                           (setf
@@ -117,16 +117,15 @@ Use a double \\[universal-argument] \\[universal-argument] to insert a
                                         ;; insert a new link
                                         (insert
                                          (concat
-                                          "ref:" label))
+                                          org-ref-default-ref-type ":" label))
                                         )))
                                    ;; one prefix, alternate ref link
                                    ((equal helm-current-prefix-arg '(4))
                                     (insert
                                      (concat
-                                      (helm :sources '((name . "Ref link types")
-                                                       (candidates . ("ref" "eqref"
-								      "pageref" "nameref"))
-                                                       (action . (lambda (x) x))))
+                                      (helm :sources `((name . "Ref link types")
+						      (candidates . ,org-ref-ref-types)
+						      (action . (lambda (x) x))))
                                       ":" label)))
                                    ;; two prefixes, insert section custom-id link
                                    ((equal helm-current-prefix-arg '(16))
@@ -149,24 +148,50 @@ This widens the file so that all links go to the right place."
         (bib-candidates '())
 	(unreferenced-labels '())
 	natbib-required
-	natbib-used)
+	natbib-used
+	cleveref-required
+	cleveref-used
+	biblatex-required
+	biblatex-used)
 
-    ;; See if natbib is required
+    ;; See if natbib, biblatex or cleveref are required
     (org-element-map (org-element-parse-buffer) 'link
       (lambda (link)
 	(when (member (org-element-property :type link) org-ref-natbib-types)
-	  (setq natbib-required t)))
+	  (setq natbib-required t))
+	(when (member (org-element-property :type link) org-ref-biblatex-types)
+	  (setq biblatex-required t))
+	(when (member (org-element-property :type link) '("cref" "Cref"))
+	  (setq cleveref-required t)))
       nil t)
 
     ;; See if natbib is probably used. This will miss a case where natbib is included somehow.
     (setq natbib-used
 	  (or
-	   (member "natbib" (mapcar (lambda (x) (nth 1 x)) org-latex-default-packages-alist))
-	   (member "natbib" (mapcar (lambda (x) (nth 1 x)) org-latex-packages-alist))
+	   (member "natbib" (mapcar (lambda (x) (when (listp x) (nth 1 x))) org-latex-default-packages-alist))
+	   (member "natbib" (mapcar (lambda (x) (when (listp x) (nth 1 x))) org-latex-packages-alist))
 	   ;; see of something like \usepackage{natbib} exists.
 	   (save-excursion
 	     (goto-char (point-min))
 	     (re-search-forward "{natbib}" nil t))))
+
+    (setq biblatex-used
+	  (or
+	   (member "biblatex" (mapcar (lambda (x) (when (listp x) (nth 1 x))) org-latex-default-packages-alist))
+	   (member "biblatex" (mapcar (lambda (x) (when (listp x) (nth 1 x))) org-latex-packages-alist))
+	   ;; see of something like \usepackage{biblatex} exists.
+	   (save-excursion
+	     (goto-char (point-min))
+	     (re-search-forward "{biblatex}" nil t))))
+
+    (setq cleveref-used
+	  (or
+	   (member "cleveref" (mapcar (lambda (x) (when (listp x) (nth 1 x))) org-latex-default-packages-alist))
+	   (member "cleveref" (mapcar (lambda (x) (when (listp x) (nth 1 x))) org-latex-packages-alist))
+	   ;; see of something like \usepackage{cleveref} exists.
+	   (save-excursion
+	     (goto-char (point-min))
+	     (re-search-forward "{cleveref}" nil t))))
 
     ;; setup bib-candidates. This checks a variety of things in the
     ;; bibliography, bibtex files. check for which bibliographies are used
@@ -274,10 +299,10 @@ at the end of you file.
 	  ;; these are the org-ref label:stuff  kinds
 	  (while (re-search-forward
 		  "[^#+]label:\\([a-zA-z0-9:-]*\\)" nil t)
-	    (setq matches (append matches
-				  (list (cons
-					 (match-string-no-properties 1)
-					 (point))))))
+	    (cl-pushnew (cons
+			 (match-string-no-properties 1)
+			 (point))
+			matches))
 	  ;; now add all the other kinds of labels.
 	  ;; #+label:
 	  (save-excursion
@@ -287,15 +312,14 @@ at the end of you file.
 	      ;; who would have thought you have save match data here? Trust me. When
 	      ;; I wrote this, you did.
 	      (unless (save-match-data  (equal (car (org-element-at-point)) 'table))
-		(add-to-list 'matches (cons (match-string-no-properties 1) (point))
-			     t))))
+		(cl-pushnew (cons (match-string-no-properties 1) (point)) matches))))
 
 	  ;; \label{}
 	  (save-excursion
 	    (goto-char (point-min))
 	    (while (re-search-forward "\\\\label{\\([a-zA-z0-9:-]*\\)}"
 				      nil t)
-	      (add-to-list 'matches (cons (match-string-no-properties 1) (point)) t)))
+	      (cl-pushnew (cons (match-string-no-properties 1) (point)) matches)))
 
 	  ;; #+tblname: and actually #+label
 	  (loop for cell in (org-element-map (org-element-parse-buffer 'element) 'table
@@ -303,18 +327,18 @@ at the end of you file.
 				(cons (org-element-property :name table)
 				      (org-element-property :begin table))))
 		do
-		(add-to-list 'matches cell t))
+		(cl-pushnew cell matches))
 
 	  ;; CUSTOM_IDs
 	  (org-map-entries
 	   (lambda ()
 	     (let ((custom_id (org-entry-get (point) "CUSTOM_ID")))
 	       (when (not (null custom_id))
-		 (add-to-list 'matches (cons custom_id (point)))))))
+		 (cl-pushnew (cons custom_id (point)) matches)))))
 
 	  (goto-char (point-min))
 	  (while (re-search-forward "^#\\+name:\\s-+\\(.*\\)" nil t)
-	    (pushnew (cons (match-string 1) (point)) matches))
+	    (cl-pushnew (cons (match-string 1) (point)) matches))
 
 
 	  ;; unreference labels
@@ -324,7 +348,9 @@ at the end of you file.
 				    (string= "eqref" (org-element-property :type el))
 				    (string= "pageref" (org-element-property :type el))
 				    (string= "nameref" (org-element-property :type el))
-				    (string= "autoref" (org-element-property :type el)))
+				    (string= "autoref" (org-element-property :type el))
+				    (string= "cref" (org-element-property :type el))
+				    (string= "Cref" (org-element-property :type el)))
 			    (org-element-property :path el))))))
 	    (loop for (label . p) in matches 
 		  do
@@ -379,11 +405,15 @@ at the end of you file.
 		      (candidates . (,(format "org-latex-prefer-user-labels = %s"
 					      org-latex-prefer-user-labels)
 				     ,(format "bibtex-dialect = %s" bibtex-dialect)
+				     ,(format "biblatex is%srequired." (if biblatex-required " " " not "))
+				     ,(format "biblatex is%sused." (if biblatex-used " " " not "))
 				     ,(format "org-version = %s" (org-version))
 				     ,(format "completion backend = %s" org-ref-completion-library)
 				     ,(format "org-latex-pdf-process is defined as %s" org-latex-pdf-process)
 				     ,(format "natbib is%srequired." (if natbib-required " " " not "))
-				     ,(format "natbib is%sused." (if natbib-used " " " not "))))
+				     ,(format "natbib is%sused." (if natbib-used " " " not "))
+				     ,(format "cleveref is%srequired." (if cleveref-required " " " not "))
+				     ,(format "cleveref is%sused." (if cleveref-used " " " not "))))
 		      (action . nil))
 
                      ((name . "Utilities")

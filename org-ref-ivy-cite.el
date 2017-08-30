@@ -205,8 +205,8 @@ This uses a citeproc library."
     (format "%s\n\n" (orhc-formatted-citation entry))))
 
 
-(defun or-ivy-bibtex-insert-formatted-citation (entry)
-  "Insert formatted citations at point for selected ENTRY."
+(defun or-ivy-bibtex-insert-formatted-citation (_)
+  "Insert formatted citations at point for selected entries."
   (with-ivy-window
     (insert (mapconcat
 	     'identity
@@ -432,9 +432,10 @@ Use a prefix arg to select the ref type."
   (interactive)
   (let ((label (ivy-read "label: " (org-ref-get-labels) :require-match t)))
     (insert
+     (or (when (looking-at "$") " ") "")
      (concat (if ivy-current-prefix-arg
-		 (ivy-read "type: " '("ref" "eqref" "nameref" "pageref"))
-	       "ref")
+		 (ivy-read "type: " org-ref-ref-types)
+	       org-ref-default-ref-type)
 	     ":"
 	     label))))
 

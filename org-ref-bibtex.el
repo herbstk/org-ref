@@ -485,7 +485,7 @@ all the title entries in articles."
 		       word)
 		      ;; match words containing {} or \ which are probably
 		      ;; LaTeX or protected words, ignore
-		      ((string-match "\\$\\|{\\|}\\|\\\\" word)
+		      ((string-match "\\$\\|{\\|}\\|(\\|)\\|\\\\" word)
 		       word)
 		      ;; these words should not be capitalized, unless they
 		      ;; are the first word
@@ -743,7 +743,7 @@ _p_: Open pdf     _y_: Copy key               _N_: New entry            _w_: WOS
 _b_: Open url     _f_: Copy formatted entry   _o_: Copy entry           _c_: WOS citing
 _r_: Refile entry _k_: Add keywords           _d_: delete entry         _a_: WOS related
 _e_: Email entry  _K_: Edit keywords          _L_: clean entry          _P_: Pubmed
-_U_: Update entry _N_: Open notes             _R_: Crossref             _g_: Google Scholar
+_U_: Update entry _N_: New entry              _R_: Crossref             _g_: Google Scholar
 _s_: Sort entry   _a_: Remove nonascii        _h_: helm-bibtex          _q_: quit
 _u_: Update field _F_: file funcs             _A_: Assoc pdf with entry
 _n_: Open notes                               _T_: Title case
@@ -1316,6 +1316,17 @@ will clobber the file."
 
     (with-temp-file bibfile
       (insert contents))))
+
+(defun org-ref-bibtex-key-from-doi (doi &optional bib)
+  "Return a bibtex entry's key from a DOI.
+BIB is an optional filename to get the entry from. Defaults to
+the first entry of `org-ref-default-bibliography'."
+  (let ((bibfile (if bib bib (car org-ref-default-bibliography))))
+    (with-temp-buffer
+      (insert-file-contents (expand-file-name bibfile))
+      (search-forward doi)
+      (bibtex-beginning-of-entry)
+      (cdr (assoc "=key=" (bibtex-parse-entry))))))
 
 ;;* The end
 (provide 'org-ref-bibtex)

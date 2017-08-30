@@ -27,9 +27,13 @@
 ;; get a doi. This needs a reliable title/citation.
 
 ;;; Code:
+
 (require 'f)
+(require 'pdf-tools)
 (eval-when-compile
   (require 'cl))
+
+(declare-function org-ref-bibtex-key-from-doi "org-ref-bibtex.el")
 
 (defgroup org-ref-pdf nil
   "Customization group for org-ref-pdf"
@@ -100,6 +104,27 @@ Used when multiple dois are found in a pdf file."
 	    doi
 	    (buffer-file-name))))
 
+;;;###autoload
+(defun org-ref-pdf-to-bibtex ()
+  "Add pdf of current buffer to bib file and save pdf to
+`org-ref-default-bibliography'. The pdf should be open in Emacs
+using the `pdf-tools' package."
+  (interactive)
+  (when (not (f-ext? (buffer-file-name) "pdf"))
+    (error "Buffer is not a pdf file"))
+  ;; Get doi from pdf of current buffer
+  (let* ((dois (org-ref-extract-doi-from-pdf (buffer-file-name)))
+         (doi-utils-download-pdf nil)
+         (doi (if (= 1 (length dois))
+                  (car dois)
+                (completing-read "Select DOI: " dois))))
+    ;; Add bib entry from doi:
+    (doi-utils-add-bibtex-entry-from-doi doi)
+    ;; Copy pdf to `org-ref-pdf-directory':
+    (let ((key (org-ref-bibtex-key-from-doi doi)))
+      (copy-file (buffer-file-name)
+                 (expand-file-name (format "%s.pdf" key)
+                                   org-ref-pdf-directory)))))
 
 ;;;###autoload
 ;; (defun org-ref-pdf-dnd-func (event)
@@ -233,14 +258,15 @@ variable `org-ref-pdf-doi-regex'."
   (occur org-ref-pdf-doi-regex)
   (switch-to-buffer-other-window "*Occur*"))
 
+
 ;;;###autoload
 (defun org-ref-pdf-crossref-lookup ()
-	"Lookup highlighted text in PDFView in CrossRef."
-	(interactive)
-	(pdf-view-assert-active-region)
-	(let* ((txt (pdf-view-active-region-text)))
-		(pdf-view-deactivate-region)
-		(crossref-lookup (mapconcat 'identity txt "	 \n"))))
+  "Lookup highlighted text in PDFView in CrossRef."
+  (interactive)
+  (pdf-view-assert-active-region)
+  (let* ((txt (pdf-view-active-region-text)))
+    (pdf-view-deactivate-region)
+    (crossref-lookup (mapconcat 'identity txt "	 \n"))))
 
 
 (provide 'org-ref-pdf)

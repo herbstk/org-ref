@@ -58,60 +58,6 @@
     '(a c b)
     (org-ref-swap-keys 1 2 '(a b c)))))
 
-(ert-deftest test-8 ()
-  (org-test-with-temp-text
-      (format "cite:kitchin-2015-examp
-
-bibliography:%s
-" (expand-file-name
-   "tests/test-1.bib"
-   (file-name-directory
-    (locate-library "org-ref"))))
-    (should
-     (string=
-      (org-ref-link-message)
-      "Kitchin, J. R., Examples of effective data sharing in scientific publishing, ACS Catalysis, 5(6), 3894–3899 (2015).  http://dx.doi.org/10.1021/acscatal.5b00538"))))
-
-(ert-deftest test-9 ()
-  (org-test-with-temp-text
-      (format "cite:kitchin-2015
-
-bibliography:%s
-"
-	      (expand-file-name
-	       "tests/test-1.bib"
-	       (file-name-directory
-		(locate-library "org-ref"))))
-    (should
-     (string= "!!! No entry found !!!"
-	      (org-ref-link-message)))))
-
-(ert-deftest orlm ()
-  (org-test-with-temp-text
-      (format "cite:kitchin-2015-examp
-
-bibliography:%s
-" (expand-file-name
-   "tests/test-1.bib"
-   (file-name-directory
-    (locate-library "org-ref"))))
-    (should
-     (string= (org-ref-link-message)
-	      "Kitchin, J. R., Examples of effective data sharing in scientific publishing, ACS Catalysis, 5(6), 3894–3899 (2015).  http://dx.doi.org/10.1021/acscatal.5b00538"))))
-
-(ert-deftest orlm-nil ()
-  (org-test-with-temp-text
-      (format "cite:kitchin-2015
-
-bibliography:%s
-" (expand-file-name
-   "tests/test-1.bib"
-   (file-name-directory
-    (locate-library "org-ref"))))
-    (should
-     (string= "!!! No entry found !!!"
-	      (org-ref-link-message)))))
-
 (ert-deftest orlm-ref-1 ()
   (should
    (string=
@@ -1388,7 +1334,7 @@ bibliography:tests/test-1.bib
       (should
        (= 27 (point))))))
 
-(ert-deftest cite-face ()
+(ert-deftest cite-face-1 ()
   (org-test-with-temp-text
       "cite:kitchin-2015-examp
 
@@ -1409,7 +1355,7 @@ bibliography:tests/test-1.bib
     ;; (should (eq 'org-ref-cite-face (get-char-property 1 'face)))
     ))
 
-(ert-deftest cite-face ()
+(ert-deftest cite-face-2 ()
   (org-test-with-temp-text
       "# cite:kitchin-2015-examp
 
@@ -1443,20 +1389,6 @@ bibliography:tests/test-1.bib
       (org-ref-match-next-ref-link nil)
       (should
        (= 11 (point))))))
-
-(ert-deftest ref-face ()
-  (org-test-with-temp-text
-      " ref:kitchin-2015-examp
-
-bibliography:tests/test-1.bib
-"
-    (unless (fboundp 'org-link-set-parameters)
-      (font-lock-add-keywords
-       nil
-       '((org-ref-match-next-ref-link (0  'org-ref-ref-face t)))
-       t))
-    (font-lock-fontify-region (point-min) (point-max))
-    (should (eq 'org-ref-ref-face (get-char-property 2 'face)))))
 
 (ert-deftest fl-next-label ()
   (org-test-with-temp-text

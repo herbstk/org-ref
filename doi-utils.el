@@ -333,7 +333,7 @@ Argument REDIRECT-URL URL you are redirected to."
 
 ;;** Science Direct
 (defun doi-utils-get-science-direct-pdf-url (redirect-url)
-  "Science direct hides the pdf url in html.  W get it out here.
+  "Science direct hides the pdf url in html.  We get it out here.
 REDIRECT-URL is where the pdf url will be in."
   (setq *doi-utils-waiting* t)
   (url-retrieve
@@ -468,6 +468,39 @@ REDIRECT-URL is where the pdf url will be in."
     (replace-regexp-in-string "/articles/" "/track/pdf/" *doi-utils-redirect*)))
 
 
+
+;;** ASME Biomechanical Journal
+
+(defun asme-biomechanical-pdf-url (*doi-utils-redirect*)
+  "Typical URL:  http://biomechanical.asmedigitalcollection.asme.org/article.aspx?articleid=1427237
+
+On this page the pdf might be here:     <meta name=\"citation_author\" content=\"Dalong Li\" /><meta name=\"citation_author_email\" content=\"dal40@pitt.edu\" /><meta name=\"citation_author\" content=\"Anne M. Robertson\" /><meta name=\"citation_author_email\" content=\"rbertson@pitt.edu\" /><meta name=\"citation_title\" content=\"A Structural Multi-Mechanism Damage Model for Cerebral Arterial Tissue\" /><meta name=\"citation_firstpage\" content=\"101013\" /><meta name=\"citation_doi\" content=\"10.1115/1.3202559\" /><meta name=\"citation_keyword\" content=\"Mechanisms\" /><meta name=\"citation_keyword\" content=\"Biological tissues\" /><meta name=\"citation_keyword\" content=\"Stress\" /><meta name=\"citation_keyword\" content=\"Fibers\" /><meta name=\"citation_journal_title\" content=\"Journal of Biomechanical Engineering\" /><meta name=\"citation_journal_abbrev\" content=\"J Biomech Eng\" /><meta name=\"citation_volume\" content=\"131\" /><meta name=\"citation_issue\" content=\"10\" /><meta name=\"citation_publication_date\" content=\"2009/10/01\" /><meta name=\"citation_issn\" content=\"0148-0731\" /><meta name=\"citation_publisher\" content=\"American Society of Mechanical Engineers\" /><meta name=\"citation_pdf_url\" content=\"http://biomechanical.asmedigitalcollection.asme.org/data/journals/jbendy/27048/101013_1.pdf\" />
+
+It is in the citation_pdf_url.
+
+It would be better to parse this, but here I just use a regexp.
+"
+
+  (when (string-match "^http://biomechanical.asmedigitalcollection.asme.org" *doi-utils-redirect*)
+    (setq *doi-utils-waiting* 0)
+    (url-retrieve
+     *doi-utils-redirect*
+     (lambda (status)
+       (goto-char (point-min))
+       (re-search-forward "citation_pdf_url\" content=\"\\(.*\\)\"" nil t)
+       (message-box (match-string 1))
+       (setq *doi-utils-pdf-url* (match-string 1)
+	     *doi-utils-waiting* nil)))
+    (while (and *doi-utils-waiting* (< *doi-utils-waiting* 5))
+      (setq *doi-utils-waiting* (+ *doi-utils-waiting* 0.1))
+      (sleep-for 0.1))
+    *doi-utils-pdf-url*))
+
+
+
+
+
+
 ;;** Add all functions
 
 (setq doi-utils-pdf-url-functions
@@ -499,6 +532,7 @@ REDIRECT-URL is where the pdf url will be in."
        'annuvrev-pdf-url
        'plos-pdf-url
        'biomedcentral-pdf-url
+       'asme-biomechanical-pdf-url
        'generic-full-pdf-url))
 
 ;;** Get the pdf url for a doi
@@ -710,7 +744,7 @@ MATCHING-TYPES."
 (doi-utils-def-bibtex-type book ("book")
                            author title series publisher year pages doi url)
 
-(doi-utils-def-bibtex-type inbook ("book-chapter")
+(doi-utils-def-bibtex-type inbook ("book-chapter" "reference-entry")
                            author title booktitle series publisher year pages doi url)
 
 
@@ -779,6 +813,25 @@ Argument BIBFILE the bibliography to use."
                                   (region-beginning)
                                   (region-end))))
             (buffer-substring (region-beginning) (region-end)))
+	   ((and  (region-active-p)
+                  (s-match "^http://dx\\.doi\\.org/" (buffer-substring
+						      (region-beginning)
+						      (region-end))))
+            (replace-regexp-in-string "^http://dx\\.doi\\.org/" ""
+				      (buffer-substring (region-beginning) (region-end))))
+	   ((and  (region-active-p)
+		  (s-match "^https://dx\\.doi\\.org/" (buffer-substring
+						       (region-beginning)
+						       (region-end))))
+	    (replace-regexp-in-string "^https://dx\\.doi\\.org/" ""
+				      (buffer-substring (region-beginning) (region-end))))
+	   ((and  (region-active-p)
+                  (s-match (regexp-quote doi-utils-dx-doi-org-url) (buffer-substring
+								    (region-beginning)
+								    (region-end))))
+	    (replace-regexp-in-string  (regexp-quote doi-utils-dx-doi-org-url) ""
+				       (buffer-substring (region-beginning) (region-end)))
+            (buffer-substring (region-beginning) (region-end)))
            ;; if the first entry in the kill-ring looks
            ;; like a DOI, let's use it.
            ((and
@@ -786,11 +839,27 @@ Argument BIBFILE the bibliography to use."
              (stringp (car kill-ring))
              (s-match "^10" (car kill-ring)))
             (car kill-ring))
+	   ;; maybe kill-ring matches http://dx.doi or somthing
+	   ((and
+             ;; make sure the kill-ring has something in it
+             (stringp (car kill-ring))
+             (s-match "^http://dx\\.doi\\.org/" (car kill-ring)))
+            (replace-regexp-in-string "^http://dx\\.doi\\.org/" "" (car kill-ring)))
+	   ((and
+             ;; make sure the kill-ring has something in it
+             (stringp (car kill-ring))
+             (s-match "^https://dx\\.doi\\.org/" (car kill-ring)))
+            (replace-regexp-in-string "^https://dx\\.doi\\.org/" "" (car kill-ring)))
+	   ((and
+             ;; make sure the kill-ring has something in it
+             (stringp (car kill-ring))
+             (s-match (regexp-quote doi-utils-dx-doi-org-url) (car kill-ring)))
+            (replace-regexp-in-string (regexp-quote doi-utils-dx-doi-org-url) "" (car kill-ring)))
            ;; otherwise, we have no initial input. You
            ;; will have to type it in.
            (t
             nil)))))
-
+  
   (unless bibfile
     (setq bibfile (completing-read
 		   "Bibfile: "
@@ -817,7 +886,7 @@ Argument BIBFILE the bibliography to use."
 	(when (not (= (point) (line-beginning-position)))
 	  (forward-char 1))
 
-	(when (not (looking-back "\n\n" 3))
+	(when (not (looking-back "\n\n" (min 3 (point))))
 	  (insert "\n\n"))
 	
         (doi-utils-insert-bibtex-entry-from-doi doi)
@@ -1325,22 +1394,13 @@ error."
 		     (candidates . ,helm-candidates)
 		     ;; just return the candidate
 		     (action . (("Insert bibtex entry" .  (lambda (doi)
-							    ;; always show bibtex entry
-							    (if (string= (buffer-name (current-buffer))
-									 (file-name-nondirectory bibtex-file))
-								(setq doi-utils--bibtex-file nil)
-							      (setq doi-utils--bibtex-file t)
-							      (split-window-below)
-							      (other-window 1)
-							      (find-file bibtex-file))
-							    (cl-loop for doi in (helm-marked-candidates)
-								     do
-								     (doi-utils-add-bibtex-entry-from-doi
-								      (replace-regexp-in-string
-								       "^https?://\\(dx.\\)?doi.org/" "" doi)
-								      ,bibtex-file))
-							    (when doi-utils--bibtex-file
-							      (recenter-top-bottom 0))))
+							    (with-current-buffer (find-file-noselect bibtex-file)
+							      (cl-loop for doi in (helm-marked-candidates)
+								       do
+								       (doi-utils-add-bibtex-entry-from-doi
+									(replace-regexp-in-string
+									 "^https?://\\(dx.\\)?doi.org/" "" doi)
+									,bibtex-file)))))
 				("Open url" . (lambda (doi)
 						(browse-url doi))))))))
       (helm :sources source
