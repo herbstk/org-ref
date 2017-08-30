@@ -467,6 +467,7 @@ REDIRECT-URL is where the pdf url will be in."
   (when (string-match "http://.+biomedcentral.com/articles/" *doi-utils-redirect*)
     (replace-regexp-in-string "/articles/" "/track/pdf/" *doi-utils-redirect*)))
 
+
 ;;** Add all functions
 
 (setq doi-utils-pdf-url-functions
