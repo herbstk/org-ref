@@ -34,7 +34,7 @@
 ;; org-ref-set-journal-string :: in a bibtex entry run this to replace the
 ;; journal with a string
 ;;
-;; org-ref-title-case-article :: title case the title in an article
+;; org-ref-title-case-article :: title case the title in an article or book
 ;; org-ref-sentence-case-article :: sentence case the title in an article.
 
 ;; org-ref-replace-nonascii :: replace nonascii characters in a bibtex
@@ -456,13 +456,19 @@ This is defined in `org-ref-bibtex-journal-abbreviations'."
     "the" "of" "in")
   "List of words to keep lowercase when changing case in a title.")
 
+(defcustom org-ref-title-case-types '("article" "book")
+  "List of bibtex entry types in which the title will be converted to
+title-case by org-ref-title-case."
+  :type '(repeat string)
+  :group 'org-ref-bibtex)
 
 ;;;###autoload
-(defun org-ref-title-case-article (&optional key start end)
-  "Convert a bibtex entry article title to title-case.
-The arguments KEY, START and END are optional, and are only there
-so you can use this function with `bibtex-map-entries' to change
-all the title entries in articles."
+(defun org-ref-title-case (&optional key start end)
+  "Convert a bibtex entry title to title-case if the entry type
+is a member of the list org-ref-title-case-types. The arguments
+KEY, START and END are optional, and are only there so you can
+use this function with `bibtex-map-entries' to change all the
+title entries in articles and books."
   (interactive)
   (bibtex-beginning-of-entry)
 
@@ -470,9 +476,9 @@ all the title entries in articles."
          (words (split-string title))
          (start 0))
     (when
-        (string= "article"
-		 (downcase
-		  (cdr (assoc "=type=" (bibtex-parse-entry)))))
+        (member (downcase
+		 (cdr (assoc "=type=" (bibtex-parse-entry))))
+		org-ref-title-case-types)
       (setq words (mapcar
                    (lambda (word)
 		     (cond
@@ -518,6 +524,16 @@ all the title entries in articles."
        "title"
        title)
       (bibtex-fill-entry))))
+
+;;;###autoload
+(defun org-ref-title-case-article (&optional key start end)
+  "Convert a bibtex entry article or book title to title-case.
+The arguments KEY, START and END are optional, and are only there
+so you can use this function with `bibtex-map-entries' to change
+all the title entries in articles and books."
+  (interactive)
+  (let ((org-ref-title-case-types '("article")))
+    (org-ref-title-case)))
 
 
 ;;;###autoload
@@ -672,12 +688,12 @@ there is a DOI."
 (defun org-ref-bibtex-google-scholar ()
   "Open the bibtex entry at point in google-scholar by its doi."
   (interactive)
-  (let ((doi (org-ref-bibtex-entry-doi))) 
+  (let ((doi (org-ref-bibtex-entry-doi)))
     (doi-utils-google-scholar
      (if (string= "" doi)
 	 (save-excursion
 	   (bibtex-beginning-of-entry)
-	   (reftex-get-bib-field "title" (bibtex-parse-entry t))) 
+	   (reftex-get-bib-field "title" (bibtex-parse-entry t)))
        doi))))
 
 
@@ -1046,9 +1062,9 @@ the cache."
 	 (cl-loop
 	  for bibfile in org-ref-bibtex-files
 	  collect
-	  (string= (progn
-		     (with-current-buffer (find-file-noselect bibfile)
-		       (secure-hash 'sha256 (current-buffer))))
+	  (string= (with-temp-buffer
+		     (insert-file-contents bibfile)
+		     (secure-hash 'sha256 (current-buffer))) 
 		   (or (cdr (assoc
 			     bibfile
 			     (cdr (assoc 'hashes orhc-bibtex-cache-data)))) "")))))
@@ -1107,75 +1123,79 @@ easier to search specifically for them."
 This generates the candidates for the file. Some of this code is
 adapted from `helm-bibtex-parse-bibliography'. This function runs
 when called, it resets the cache for the BIBFILE."
-  (with-current-buffer (find-file-noselect bibfile)
-    (bibtex-beginning-of-first-entry)
-    (message "Updating cache for %s" bibfile)
-    (let ((hash (secure-hash 'sha256 (current-buffer)))
-	  (entries
-	   (cl-loop
-	    for entry-type = (parsebib-find-next-item)
-	    while entry-type
-	    unless (member-ignore-case entry-type
-				       '("preamble" "string" "comment"))
-	    collect
-	    (let* ((entry (cl-loop for cons-cell in (parsebib-read-entry entry-type)
-				   ;; we remove all properties too. they
-				   ;; cause errors in reading/writing.
-				   collect
-				   (cons (substring-no-properties
-					  (downcase (car cons-cell)))
-					 (substring-no-properties
-					  ;; clumsy way to remove surrounding
-					  ;; brackets
-					  (let ((s (cdr cons-cell)))
-					    (if (or (and (s-starts-with? "{" s)
-							 (s-ends-with? "}" s))
-						    (and (s-starts-with? "\"" s)
-							 (s-ends-with? "\"" s)))
-						(substring s 1 -1)
-					      s))))))
-		   ;; (key (cdr (assoc "=key=" entry)))
-		   )
-	      (cons
-	       ;; this is the display string for helm. We try to use the formats
-	       ;; in `orhc-candidate-formats', but if there isn't one we just put
-	       ;; all the fields in.
-	       (s-format
-		(or (cdr (assoc (downcase entry-type) orhc-candidate-formats))
-		    (format "%s: %s" (cdr (assoc "=key=" entry)) entry))
-		'orhc-bibtex-field-formatter
-		entry)
-	       ;; this is the candidate that is returned, the entry a-list +
-	       ;; file and position.
-	       (append entry (list (cons "bibfile" (buffer-file-name))
-				   (cons "position" (point)))))))))
+  ;; check if the bibfile is already open, and preserve this state. i.e. if it
+  ;; is not open close it, and if it is leave it open.
+  (let ((bibfile-open (find-buffer-visiting bibfile)))
+    (with-current-buffer (find-file-noselect bibfile)
+      (bibtex-beginning-of-first-entry)
+      (message "Updating cache for %s" bibfile)
+      (let ((hash (secure-hash 'sha256 (current-buffer)))
+	    (entries
+	     (cl-loop
+	      for entry-type = (parsebib-find-next-item)
+	      while entry-type
+	      unless (member-ignore-case entry-type
+					 '("preamble" "string" "comment"))
+	      collect
+	      (let* ((entry (cl-loop for cons-cell in (parsebib-read-entry entry-type)
+				     ;; we remove all properties too. they
+				     ;; cause errors in reading/writing.
+				     collect
+				     (cons (substring-no-properties
+					    (downcase (car cons-cell)))
+					   (substring-no-properties
+					    ;; clumsy way to remove surrounding
+					    ;; brackets
+					    (let ((s (cdr cons-cell)))
+					      (if (or (and (s-starts-with? "{" s)
+							   (s-ends-with? "}" s))
+						      (and (s-starts-with? "\"" s)
+							   (s-ends-with? "\"" s)))
+						  (substring s 1 -1)
+						s))))))
+		     ;; (key (cdr (assoc "=key=" entry)))
+		     )
+		(cons
+		 ;; this is the display string for helm. We try to use the formats
+		 ;; in `orhc-candidate-formats', but if there isn't one we just put
+		 ;; all the fields in.
+		 (s-format
+		  (or (cdr (assoc (downcase entry-type) orhc-candidate-formats))
+		      (format "%s: %s" (cdr (assoc "=key=" entry)) entry))
+		  'orhc-bibtex-field-formatter
+		  entry)
+		 ;; this is the candidate that is returned, the entry a-list +
+		 ;; file and position.
+		 (append entry (list (cons "bibfile" (buffer-file-name))
+				     (cons "position" (point)))))))))
 
-      ;; Now update the cache variables for hash and entries
-      (if (assoc bibfile (cdr (assoc 'candidates orhc-bibtex-cache-data)))
-	  (setf (cdr (assoc bibfile
-			    (cdr (assoc 'candidates orhc-bibtex-cache-data))))
-		entries)
-	(cl-pushnew (cons bibfile entries)
-		    (cdr (assoc 'candidates orhc-bibtex-cache-data))))
-      (if (assoc bibfile (cdr (assoc 'hashes orhc-bibtex-cache-data)))
-	  (setf (cdr (assoc
-		      bibfile
+	;; Now update the cache variables for hash and entries
+	(if (assoc bibfile (cdr (assoc 'candidates orhc-bibtex-cache-data)))
+	    (setf (cdr (assoc bibfile
+			      (cdr (assoc 'candidates orhc-bibtex-cache-data))))
+		  entries)
+	  (cl-pushnew (cons bibfile entries)
+		      (cdr (assoc 'candidates orhc-bibtex-cache-data))))
+	(if (assoc bibfile (cdr (assoc 'hashes orhc-bibtex-cache-data)))
+	    (setf (cdr (assoc
+			bibfile
+			(cdr (assoc 'hashes orhc-bibtex-cache-data))))
+		  hash)
+	  (cl-pushnew (cons bibfile hash)
 		      (cdr (assoc 'hashes orhc-bibtex-cache-data))))
-		hash)
-	(cl-pushnew (cons bibfile hash)
-		    (cdr (assoc 'hashes orhc-bibtex-cache-data))))
 
-      ;; And save it to disk for persistent use
-      (with-temp-file orhc-bibtex-cache-file
-	(print orhc-bibtex-cache-data (current-buffer))))))
+	;; And save it to disk for persistent use
+	(with-temp-file orhc-bibtex-cache-file
+	  (print orhc-bibtex-cache-data (current-buffer)))))
+    (unless bibfile-open (kill-buffer (find-buffer-visiting bibfile)))))
 
 (defun orhc-update-bibtex-cache ()
   "Conditionally update cache for all files in `org-ref-bibtex-files'.
 Files that have the same hash as in the cache are not updated."
   (cl-loop for bibfile in org-ref-bibtex-files
-	   unless (string= (progn
-			     (with-current-buffer (find-file-noselect bibfile)
-			       (secure-hash 'sha256 (current-buffer))))
+	   unless (string= (with-temp-buffer
+			     (insert-file-contents bibfile)
+			     (secure-hash 'sha256 (current-buffer))) 
 			   (or (cdr
 				(assoc bibfile
 				       (cdr
@@ -1239,7 +1259,7 @@ of format strings used."
 
 (defun org-ref-format-entry (key)
   "Returns a formatted bibtex entry for KEY."
-  (let* ((bibtex-completion-bibliography (org-ref-find-bibliography))) 
+  (let* ((bibtex-completion-bibliography (org-ref-find-bibliography)))
     (org-ref-format-bibtex-entry (ignore-errors (bibtex-completion-get-entry key)))))
 
 
