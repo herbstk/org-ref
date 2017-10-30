@@ -129,7 +129,7 @@
          (aid (cdr (assoc "AID" data))))
 
     (cond
-     ((string= type "JOURNAL ARTICLE")
+     ((string= type "Journal Article")
       (concat "@article{,
  author = {" authors "},
  title = {" title "},
