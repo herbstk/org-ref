@@ -1966,8 +1966,7 @@ set in `org-ref-default-bibliography'"
                  (t
                   (error "%s does not seem to exist" bibfile)))))
         
-        (when org-ref-bibliography-files
-          (message "got bibliography link")
+        (when org-ref-bibliography-files 
           (throw 'result org-ref-bibliography-files))
         
         ;; Try addbibresource as a latex command. It appears that reftex does
@@ -2757,7 +2756,8 @@ file.  Makes a new buffer with clickable links."
          (other-fields)
          (type (cdr (assoc "=type=" entry)))
          (key (cdr (assoc "=key=" entry)))
-	 (field-order (cdr (assoc type org-ref-bibtex-sort-order))))
+	 (field-order (cdr (assoc (if type (downcase type))
+				  org-ref-bibtex-sort-order))))
 
     ;; these are the fields we want to order that are in this entry
     (setq entry-fields (mapcar (lambda (x) (car x)) entry))
@@ -2979,16 +2979,17 @@ If not, issue a warning."
 See functions in `org-ref-clean-bibtex-entry-hook'."
   (interactive)
   (save-excursion
-    (bibtex-narrow-to-entry)
-    (bibtex-beginning-of-entry)
-    ;; run hooks. each of these operates on the entry with no arguments.
-    ;; this did not work like  i thought, it gives a symbolp error.
-    ;; (run-hooks org-ref-clean-bibtex-entry-hook)
-    (mapc (lambda (x)
-	    (save-restriction
-	      (save-excursion
-		(funcall x))))
-	  org-ref-clean-bibtex-entry-hook)))
+    (save-restriction
+      (bibtex-narrow-to-entry)
+      (bibtex-beginning-of-entry)
+      ;; run hooks. each of these operates on the entry with no arguments.
+      ;; this did not work like  i thought, it gives a symbolp error.
+      ;; (run-hooks org-ref-clean-bibtex-entry-hook)
+      (mapc (lambda (x)
+	      (save-restriction
+		(save-excursion
+		  (funcall x))))
+	    org-ref-clean-bibtex-entry-hook))))
 
 (defun org-ref-get-citation-year (key)
   "Get the year of an entry with KEY.  Return year as a string."
